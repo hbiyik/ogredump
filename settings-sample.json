@@ -1,0 +1,9 @@
+{
+"apikey":"your-api-key",
+"apisecret": "your-api-secret",
+"strategies": {"BTC-XTL": "selltake",
+               "BTC-TRTL": "selltake",
+               "BTC-ETN": "sellmake",
+               "BTC-GRFT": "selltake"
+                }
+}
