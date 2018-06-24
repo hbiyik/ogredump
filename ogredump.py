@@ -3,7 +3,7 @@ import json
 import urllib2
 from xml.dom import minidom
 import texttable
-
+import time
 
 class ogrebot(object):
     def __init__(self, sfile="settings.json"):
@@ -43,6 +43,8 @@ class ogrebot(object):
                 if skipzero and not balance:
                     continue
                 ask = self.getask(symbol)
+                if not ask:
+                    continue
                 if balance:
                     abalance = self.api.balance(symbol)["available"]
                     size = abalance * ask
@@ -107,18 +109,27 @@ class ogrebot(object):
         market = "BTC-%s" % symbol
         strategy = self.settings.get("strategies", {}).get(market, "selltake")
         orders = self.api.orders(market)
+        if len(orders["buy"]):
+            maxbuy = max(orders["buy"])
+        else:
+            maxbuy = None
+        if len(orders["sell"]):
+            minsell = min(orders["sell"].keys())
+        else:
+            minsell = None        
+        
         if strategy == "selltake":
-            ask = max(orders["buy"].keys())
+            ask = maxbuy
         elif strategy == "sellmake":
-            ask = min(orders["sell"].keys())
+            ask = minsell
         elif strategy == "sellmakelow":
-            asklow = min(orders["sell"].keys()) - 1e-8
-            buymax = max(orders["buy"].keys())
-            if asklow > buymax:
-                ask = asklow
+            if (minsell - 1e-8) > maxbuy:
+                ask = minsell - 1e-8
             else:
-                ask = buymax
+                ask = maxbuy
             # check your volume on over all volume
+        if not ask:
+            print "WARNING: %s symbol cant have %s strategy, not enough orders" % (symbol, strategy)
         return ask
     
     def dump(self):
@@ -143,12 +154,8 @@ class ogrebot(object):
                     print "ORDER FAILED: %s" % order.get("error")
                             
                             
-bot = ogrebot()
-"""
-bot.printbalances()
-bot.printbalances("btc")
-bot.printbalances("usd")
-bot.printbalances("try")
-"""
-bot.dump()
-bot.printbalances("usd")
+if __name__ == "__main__":
+    bot = ogrebot()
+    while True:
+        bot.dump()
+        time.sleep(30)
