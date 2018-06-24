@@ -45,7 +45,7 @@ class ogrebot(object):
                 ask = self.getask(symbol)
                 if not ask:
                     continue
-                if balance:
+                if balance and ask:
                     abalance = self.api.balance(symbol)["available"]
                     size = abalance * ask
                     if size < self.minsize:
@@ -128,8 +128,6 @@ class ogrebot(object):
             else:
                 ask = maxbuy
             # check your volume on over all volume
-        if not ask:
-            print "WARNING: %s symbol cant have %s strategy, not enough orders" % (symbol, strategy)
         return ask
     
     def dump(self):
