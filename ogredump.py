@@ -38,11 +38,11 @@ class ogrebot(object):
         # yields: symbolname, available balance, junk balance, ordered balance, ask price
         for symbol, balance in self.api.balances()["balances"].iteritems():
             if symbol == "BTC":
-                yield "BTC", balance, 0, 0, 1.0
+                yield "BTC", balance, 0, 0, 1.0, "hodl"
             else:
                 if skipzero and not balance:
                     continue
-                ask = self.getask(symbol)
+                ask, strategy = self.get_askstrategy(symbol)
                 if not ask:
                     continue
                 if balance and ask:
@@ -57,10 +57,10 @@ class ogrebot(object):
                     abalance = 0
                     jbalance = 0
                 obalance = balance - abalance - jbalance
-                yield symbol, abalance, jbalance, obalance, ask
+                yield symbol, abalance, jbalance, obalance, ask, strategy
                 
     def iterbtcbalances(self):
-        for symbol, abalance, jbalance, obalance, ask in self.iterbalances():
+        for symbol, abalance, jbalance, obalance, ask, strategy in self.iterbalances():
             if symbol == "BTC":
                 obtc = obalance
             else:
@@ -105,9 +105,9 @@ class ogrebot(object):
             table.add_row(["TOTAL", sum0, sum1, sum2, sum3])
         print table.draw()
 
-    def getask(self, symbol):
+    def get_askstrategy(self, symbol):
         market = "BTC-%s" % symbol
-        strategy = self.settings.get("strategies", {}).get(market, "selltake")
+        strategy = self.settings.get("strategies", {}).get(market, "hodl").lower()
         orders = self.api.orders(market)
         if len(orders["buy"]):
             maxbuy = max(orders["buy"])
@@ -127,12 +127,14 @@ class ogrebot(object):
                 ask = minsell - 1e-8
             else:
                 ask = maxbuy
+        elif strategy == "hodl":
+            ask = maxbuy
             # check your volume on over all volume
-        return ask
+        return ask, strategy
     
     def dump(self):
-        for symbol, abalance, jbalance, obalance, ask in self.iterbalances():
-            if symbol == "BTC":
+        for symbol, abalance, jbalance, obalance, ask, strategy in self.iterbalances():
+            if symbol == "BTC" or strategy == "hodl":
                 continue
             if abalance:
                 size = abalance * ask
