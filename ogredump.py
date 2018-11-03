@@ -1,42 +1,33 @@
 from pyogre import api
 import json
-import urllib2
-from xml.dom import minidom
-import texttable
 import time
+import six
+import logging
+
+logger = logging.getLogger("ogredump")
+logger.setLevel(logging.INFO)
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+logger.addHandler(ch)
+
 
 class ogrebot(object):
     def __init__(self, sfile="settings.json"):
         try:
-            with open("settings.json") as f:
+            with open(sfile) as f:
                 self.settings = json.load(f)
-        except:
+        except Exception:
             raise Exception("Settings file is not a proper json file")
 
         self.api = api(self.settings.get("apikey"), self.settings.get("apisecret"))
+        logger.info("Ogrebot started")
         self.minsize = 0.0001
-        self.exchanges()
-        
-    def exchanges(self):
-        self.usd = {}
-        exchanges = minidom.parse(urllib2.urlopen("http://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml"))
-        for symbol in exchanges.getElementsByTagName("Cube"):
-            currency = symbol.attributes.get("currency")
-            if currency:
-                if currency.value == "USD":
-                    self.usd["EUR"] = 1 / float(symbol.attributes["rate"].value)
-                else:
-                    self.usd[currency.value] = float(symbol.attributes["rate"].value) * self.usd["EUR"]
-                
-    
-    @staticmethod
-    def btcusd():
-        bcinfo = json.loads(urllib2.urlopen("https://blockchain.info/ticker").read())
-        return bcinfo["USD"]["15m"]
-        
+
     def iterbalances(self, skipzero=True):
         # yields: symbolname, available balance, junk balance, ordered balance, ask price
-        for symbol, balance in self.api.balances()["balances"].iteritems():
+        for symbol, balance in six.iteritems(self.api.balances()["balances"]):
             if symbol == "BTC":
                 yield "BTC", balance, 0, 0, 1.0, "hodl"
             else:
@@ -58,9 +49,9 @@ class ogrebot(object):
                     jbalance = 0
                 obalance = balance - abalance - jbalance
                 yield symbol, abalance, jbalance, obalance, ask, strategy
-                
+
     def iterbtcbalances(self):
-        for symbol, abalance, jbalance, obalance, ask, strategy in self.iterbalances():
+        for symbol, abalance, jbalance, obalance, ask, _ in self.iterbalances():
             if symbol == "BTC":
                 obtc = obalance
             else:
@@ -70,40 +61,6 @@ class ogrebot(object):
                     if order["type"] == "sell":
                         obtc += order["price"] * order["quantity"]
             yield symbol, abalance * ask, jbalance * ask, obtc
-            
-    def iterfiatbalances(self, fiat=None):
-        usdbtc = self.btcusd()
-        if fiat and self.usd.get(fiat.upper()):
-            frate = self.usd[fiat.upper()] * usdbtc
-        else:
-            frate = usdbtc    
-        for symbol, abalance, jbalance, obalance in self.iterbtcbalances():
-            yield symbol, abalance * frate, jbalance * frate, obalance * frate
-
-    def printbalances(self, symbol=None):
-        if not symbol:
-            callback = self.iterbalances
-            args = ()
-        elif symbol.lower() == "btc":
-            callback = self.iterbtcbalances
-            args = ()
-        else:
-            callback = self.iterfiatbalances
-            args = (symbol,)
-        table = texttable.Texttable()
-        table.set_precision(8)
-        table.add_row(["SYMBOL/%s" % symbol, "TOTAL", "AVAILABLE", "JUNK", "ORDERED"])
-        sum0 = sum1 = sum2 = sum3 = 0
-        for ret in callback(*args):
-            total = ret[1] + ret[2] + ret[3]
-            table.add_row([ret[0], total, ret[1], ret[2], ret[3]])
-            sum0 += total
-            sum1 += ret[1]
-            sum2 += ret[2]
-            sum3 += ret[3]
-        if symbol:
-            table.add_row(["TOTAL", sum0, sum1, sum2, sum3])
-        print table.draw()
 
     def get_askstrategy(self, symbol):
         market = "BTC-%s" % symbol
@@ -116,8 +73,8 @@ class ogrebot(object):
         if len(orders["sell"]):
             minsell = min(orders["sell"].keys())
         else:
-            minsell = None        
-        
+            minsell = None
+
         if strategy == "selltake":
             ask = maxbuy
         elif strategy == "sellmake":
@@ -131,29 +88,27 @@ class ogrebot(object):
             ask = maxbuy
             # check your volume on over all volume
         return ask, strategy
-    
+
     def dump(self):
-        for symbol, abalance, jbalance, obalance, ask, strategy in self.iterbalances():
+        for symbol, abalance, _jbalance, _obalance, ask, strategy in self.iterbalances():
             if symbol == "BTC" or strategy == "hodl":
                 continue
             if abalance:
                 size = abalance * ask
                 market = "BTC-%s" % symbol
-                print "EXECUTING ORDER: AMOUNT: %s%s, PRICE %.8fBTC: SIZE:%.8fBTC" % (abalance,
-                                                                                      symbol,
-                                                                                      ask,
-                                                                                      size)
+                logger.info("EXECUTING ORDER: AMOUNT: %s%s, PRICE %.8fBTC: SIZE:%.8fBTC" % (
+                    abalance, symbol, ask, size))
                 order = self.api.sellorder(market, abalance, ask)
                 if order["success"]:
                     uuid = order["uuid"]
                     if uuid:
-                        print "ORDER PLACED SUCCESSFULLY: UUID: %s" % order["uuid"]
+                        logger.info("ORDER PLACED SUCCESSFULLY: UUID: %s" % order["uuid"])
                     else:
-                        print "ORDER SOLD SUCCESSFULLY: AMOUNT: %sBTC" % size
+                        logger.info("ORDER SOLD SUCCESSFULLY: AMOUNT: %sBTC" % size)
                 else:
-                    print "ORDER FAILED: %s" % order.get("error")
-                            
-                            
+                    logger.warning("ORDER FAILED: %s" % order.get("error"))
+
+
 if __name__ == "__main__":
     bot = ogrebot()
     while True:

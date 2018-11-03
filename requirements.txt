@@ -1,2 +1,2 @@
 https://codeload.github.com/hbiyik/pyogre/zip/master
-texttable
+six
